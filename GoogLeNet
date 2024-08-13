@@ -1,0 +1,118 @@
+import torch
+import torch.nn as nn
+
+
+class BasicConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=(1, 1), padding=(0, 0)):
+        super(BasicConv2d, self).__init__()
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=False)
+        self.batchnorm2d = nn.BatchNorm2d(num_features=out_channels, eps=0.001)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        """
+        Args:
+            x: [N,C,H,W]
+        """
+        o1 = self.conv(x)
+        o2 = self.batchnorm2d(o1)
+        o3 = self.relu(o2)
+        return o3
+
+
+class Inception(nn.Module):
+    def __init__(self, in_channels, ch1x1, ch3x3red, ch3x3, ch5x5red, ch5x5, pool_proj):
+        super(Inception, self).__init__()
+
+        self.in_channels = in_channels
+        self.ch1x1 = ch1x1
+        self.ch3x3red = ch3x3red
+        self.ch3x3 = ch3x3
+        self.ch5x5red = ch5x5red
+        self.ch5x5 = ch5x5
+        self.pool_proj = pool_proj
+
+        self.basicconv2d1 = BasicConv2d(in_channels=in_channels, out_channels=ch1x1, kernel_size=1)
+        self.basicconv2d2 = BasicConv2d(in_channels=in_channels, out_channels=ch3x3red, kernel_size=1)
+        self.basicconv2d3 = BasicConv2d(in_channels=in_channels, out_channels=ch5x5red, kernel_size=1)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=1, padding=1, ceil_mode=True)
+        self.basicconv2d4 = BasicConv2d(in_channels=ch3x3red, out_channels=ch3x3, kernel_size=3, padding=1)
+        self.basicconv2d5 = BasicConv2d(in_channels=ch5x5red, out_channels=ch5x5, kernel_size=3, padding=1)
+        self.basicconv2d6 = BasicConv2d(in_channels=in_channels, out_channels=pool_proj, kernel_size=1)
+
+    def forward(self, x):
+        """
+        Args:
+            x: [N,C,H,W]
+        """
+        o1 = self.basicconv2d1(x)
+        o2 = self.basicconv2d2(x)
+        o3 = self.basicconv2d3(x)
+        o4 = self.maxpool(x)
+        o5 = self.basicconv2d4(o2)
+        o6 = self.basicconv2d5(o3)
+        o7 = self.basicconv2d6(o4)
+        o8 = torch.cat((o1, o5, o6, o7), dim=1)
+        return o8
+
+
+class GoogLeNet(nn.Module):
+    def __init__(self, num_classes):
+        super(GoogLeNet, self).__init__()
+
+        self.num_classes = num_classes
+
+        self.basicconv2d1 = BasicConv2d(in_channels=3, out_channels=64, kernel_size=7, stride=2, padding=3)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True)
+        self.basicconv2d2 = BasicConv2d(in_channels=64, out_channels=64, kernel_size=1)
+        self.basicconv2d3 = BasicConv2d(in_channels=64, out_channels=192, kernel_size=3, padding=1)
+        self.maxpool2 = nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True)
+        self.inception1 = Inception(in_channels=192, ch1x1=64, ch3x3red=96, ch3x3=128, ch5x5red=16, ch5x5=32, pool_proj=32)
+        self.inception2 = Inception(in_channels=256, ch1x1=128, ch3x3red=128, ch3x3=192, ch5x5red=32, ch5x5=96, pool_proj=64)
+        self.maxpool3 = nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True)
+        self.inception3 = Inception(in_channels=480, ch1x1=192, ch3x3red=96, ch3x3=208, ch5x5red=16, ch5x5=48, pool_proj=64)
+        self.inception4 = Inception(in_channels=512, ch1x1=160, ch3x3red=112, ch3x3=224, ch5x5red=24, ch5x5=64, pool_proj=64)
+        self.inception5 = Inception(in_channels=512, ch1x1=128, ch3x3red=128, ch3x3=256, ch5x5red=24, ch5x5=64, pool_proj=64)
+        self.inception6 = Inception(in_channels=512, ch1x1=112, ch3x3red=144, ch3x3=288, ch5x5red=32, ch5x5=64, pool_proj=64)
+        self.inception7 = Inception(in_channels=528, ch1x1=256, ch3x3red=160, ch3x3=320, ch5x5red=32, ch5x5=128, pool_proj=128)
+        self.maxpool4 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
+        self.inception8 = Inception(in_channels=832, ch1x1=256, ch3x3red=160, ch3x3=320, ch5x5red=32, ch5x5=128, pool_proj=128)
+        self.inception9 = Inception(in_channels=832, ch1x1=384, ch3x3red=192, ch3x3=384, ch5x5red=48, ch5x5=128, pool_proj=128)
+        self.aavgpool = nn.AdaptiveAvgPool2d(output_size=1)
+        self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(p=0.2)
+        self.fc = nn.Linear(in_features=1024, out_features=num_classes)
+
+    def forward(self, x):
+        """
+        Args:
+            x: [N,3,H,W]
+        """
+        o1 = self.basicconv2d1(x)
+        o2 = self.maxpool1(o1)
+        o3 = self.basicconv2d2(o2)
+        o4 = self.basicconv2d3(o3)
+        o5 = self.maxpool2(o4)
+        o6 = self.inception1(o5)
+        o7 = self.inception2(o6)
+        o8 = self.maxpool3(o7)
+        o9 = self.inception3(o8)
+        o10 = self.inception4(o9)
+        o11 = self.inception5(o10)
+        o12 = self.inception6(o11)
+        o13 = self.inception7(o12)
+        o14 = self.maxpool4(o13)
+        o15 = self.inception8(o14)
+        o16 = self.inception9(o15)
+        o17 = self.aavgpool(o16)
+        o18 = self.flatten(o17)
+        o19 = self.dropout(o18)
+        o20 = self.fc(o19)
+        return o20
