@@ -1,0 +1,28 @@
+import torch
+import torch.nn as nn
+
+
+class LanguageModel(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_size):
+        super(LanguageModel, self).__init__()
+
+        self.vocab_size = vocab_size
+        self.embedding_dim = embedding_dim
+        self.hidden_size = hidden_size
+
+        self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embedding_dim)
+        self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True)
+        self.fc1 = nn.Linear(in_features=hidden_size, out_features=embedding_dim)
+        self.fc2 = nn.Linear(in_features=embedding_dim, out_features=vocab_size)
+
+    def forward(self, x):
+        """
+        Args:
+            x: [N,L]
+        """
+        o1 = self.embedding(x)
+        o2 = self.lstm(o1)
+        o3 = self.fc1(o2[0])
+        o4 = self.fc2(o3)
+        o5 = torch.log_softmax(o4, dim=-1)
+        return o5
